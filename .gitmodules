@@ -1,0 +1,6 @@
+[submodule "solcast_next"]
+	path = solcast_next
+	url = https://github.com/Kunal-Singh-Dadhwal/solcast_next.git
+[submodule "solcast_contr"]
+	path = solcast_contr
+	url = https://github.com/Kunal-Singh-Dadhwal/solcast_contr.git
