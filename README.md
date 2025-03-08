@@ -35,7 +35,7 @@ pnpm dev
 
 ### anchor
 
-This is a Solana program written in Rust using the Anchor framework.
+This is NOT a Solana program written in Rust using the Anchor framework.
 
 #### Commands
 
