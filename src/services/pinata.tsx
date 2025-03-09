@@ -1,8 +1,7 @@
 import axios from 'axios';
 
-const PINATA_API_KEY = process.env.NEXT_PUBLIC_PINATA_API_KEY;
-const PINATA_SECRET_KEY = process.env.NEXT_PUBLIC_PINATA_SECRET_KEY;
-
+const PINATA_API_KEY = a1031e76ed87c14e58db;
+const PINATA_SECRET_KEY = b3f3a73a2024740c5613a0f5a2283b89f2b99137b44721400360d82dcf409bce;
 export interface PostMetadata {
   title: string;
   author: string;
