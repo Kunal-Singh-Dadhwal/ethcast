@@ -15,6 +15,9 @@ export function CreatePost() {
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [isUploading, setIsUploading] = useState<boolean>(false);
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
+  const [currentStep, setCurrentStep] = useState<string | null>(null);
   
   // Use wallet context with correct property names from WalletContext.tsx
   const { 
@@ -57,35 +60,99 @@ export function CreatePost() {
 
     try {
       setIsLoading(true);
+      setIsUploading(true);
+      setUploadProgress(10);
+      setCurrentStep("Preparing content");
 
-      // Pin the raw content to IPFS
-      const contentIpfsHash = await pinContentToIPFS(content);
+      // Step 1: Upload media to IPFS if present
+      let mediaIpfsHash = null;
+      if (selectedMedia) {
+        setCurrentStep("Uploading media to IPFS");
+        setUploadProgress(20);
+        
+        try {
+          mediaIpfsHash = await pinContentToIPFS(selectedMedia, mediaType);
+          console.log("Media uploaded to IPFS:", mediaIpfsHash);
+          setUploadProgress(35);
+        } catch (error) {
+          console.error("Media upload failed:", error);
+          toast({ 
+            title: "Media upload failed",
+            description: "Continuing with content only",
+            variant: "destructive"
+          });
+        }
+      }
 
-      // Create and pin metadata to IPFS
+      // Step 2: Upload content to IPFS
+      setCurrentStep("Uploading content to IPFS");
+      setUploadProgress(50);
+      
+      let contentIpfsHash;
+      try {
+        contentIpfsHash = await pinContentToIPFS(content);
+        console.log("Content uploaded to IPFS:", contentIpfsHash);
+      } catch (error) {
+        console.error("Content upload failed:", error);
+        throw new Error("Failed to upload content to IPFS");
+      }
+
+      // Step 3: Create and upload metadata
+      setCurrentStep("Creating metadata");
+      setUploadProgress(70);
+      
       const metadata: PostMetadata = {
         title,
         author: walletAddress,
         timestamp: Date.now(),
         contentHash: contentIpfsHash,
+        mediaIpfsHash: mediaIpfsHash || undefined,
         mediaUrl: selectedMedia || undefined,
         mediaType: mediaType || undefined
       };
 
-      const metadataIpfsHash = await pinJSONToIPFS(metadata);
+      let metadataIpfsHash;
+      try {
+        metadataIpfsHash = await pinJSONToIPFS(metadata);
+        console.log("Metadata uploaded to IPFS:", metadataIpfsHash);
+      } catch (error) {
+        console.error("Metadata upload failed:", error);
+        throw new Error("Failed to upload metadata to IPFS");
+      }
 
-      // Combined IPFS hash data to store on-chain
+      // Step 4: Prepare data structure for blockchain
+      setCurrentStep("Preparing blockchain transaction");
+      setUploadProgress(80);
+      
+      // Include actual content for easier access on frontend, but still reference IPFS hashes
       const postData = JSON.stringify({
+        content: content.substring(0, 100) + (content.length > 100 ? "..." : ""), // Short preview
         contentHash: contentIpfsHash,
         metadataHash: metadataIpfsHash
       });
 
-      // Publish to blockchain based on post type
+      // Step 5: Publish to blockchain
+      setCurrentStep(postType === "free" ? "Publishing free content" : "Publishing paid content");
+      setUploadProgress(90);
+      setIsUploading(false);
+      
+      toast({
+        title: "Confirm transaction",
+        description: "Please confirm the transaction in your wallet",
+        duration: 5000
+      });
+
+      // Publish based on post type
       let transaction;
       if (postType === "free") {
         transaction = await publishFreeContent(postData);
       } else {
         transaction = await publishPaidContent(postData, price);
       }
+
+      console.log("Transaction result:", transaction);
+      setUploadProgress(100);
+      setCurrentStep("Published successfully");
 
       toast({
         title: "Post published!",
@@ -107,6 +174,9 @@ export function CreatePost() {
       });
     } finally {
       setIsLoading(false);
+      setIsUploading(false);
+      setUploadProgress(null);
+      setCurrentStep(null);
     }
   };
 
@@ -192,6 +262,20 @@ export function CreatePost() {
             )}
           </div>
         )}
+        {uploadProgress !== null && (
+          <div className="w-full space-y-2">
+            <div className="flex justify-between text-xs text-muted-foreground">
+              <span>{currentStep}</span>
+              <span>{uploadProgress}%</span>
+            </div>
+            <div className="w-full bg-muted rounded-full h-2 overflow-hidden">
+              <div 
+                className="bg-gradient-to-r from-violet-500 to-cyan-500 h-full transition-all duration-300 ease-in-out" 
+                style={{ width: `${uploadProgress}%` }}
+              />
+            </div>
+          </div>
+        )}
         <div className="flex justify-between items-center mt-4">
           <div className="flex gap-2 items-center">
             <Button
@@ -253,7 +337,11 @@ export function CreatePost() {
               className="relative overflow-hidden group bg-gradient-to-r from-violet-600 to-cyan-500 hover:from-violet-700 hover:to-cyan-600 text-white border-0"
             >
               <div className="absolute -inset-full h-full w-1/2 z-5 block transform -skew-x-12 bg-gradient-to-r from-transparent to-white opacity-40 group-hover:animate-shine" />
-              {isLoading ? 'Publishing...' : <><Send className="mr-2 h-4 w-4" />Publish</>}
+              {isLoading ? (
+                currentStep ? currentStep : 'Publishing...'
+              ) : (
+                <><Send className="mr-2 h-4 w-4" />Publish</>
+              )}
             </Button>
           </motion.div>
         </div>
