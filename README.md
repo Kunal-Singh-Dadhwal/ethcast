@@ -4,11 +4,11 @@
 
 ### Prerequisites
 
-- Node v18.18.0 or higher
 
-- Rust v1.77.2 or higher
-- Anchor CLI 0.30.1 or higher
-- Solana CLI 1.18.17 or higher
+
+- Node v18.18.0 or higher
+- Solidity Compiler (solc) v0.8.0 or higher
+- Hardhat v2.8.0 or higher
 
 ### Installation
 
@@ -25,6 +25,25 @@ cd <repo-name>
 pnpm install
 ```
 
+### Install Hardhat globaly
+
+   ```shell
+    npm install -g hardhat
+ ```
+### Navigate to the Solidity project directory and install dependencies:
+
+    ```shell
+    cd solidity
+    npm install
+    ```
+#### Compile the Contracts
+
+To compile the Solidity contracts, run:
+
+```shell
+npx hardhat compile
+```
+
 #### Start the web app
 
 ```
@@ -33,53 +52,17 @@ pnpm dev
 
 ## Apps
 
-### anchor
+### Solidity
+This project includes a Solidity component for smart contract development. Below are the steps to get started with Solidity development.
 
-This is NOT a Solana program written in Rust using the Anchor framework.
+### Hardhat
 
-#### Commands
+Hardhat is a development environment to compile, deploy, test, and debug your Ethereum software. It helps developers manage and automate the recurring tasks inherent to the process of building smart contracts and dApps.
 
-You can use any normal anchor commands. Either move to the `anchor` directory and run the `anchor` command or prefix the
-command with `pnpm`, eg: `pnpm anchor`.
-
-#### Sync the program id:
-
-Running this command will create a new keypair in the `anchor/target/deploy` directory and save the address to the
-Anchor config file and update the `declare_id!` macro in the `./src/lib.rs` file of the program.
-
-You will manually need to update the constant in `anchor/lib/counter-exports.ts` to match the new program id.
-
-```shell
-pnpm anchor keys sync
-```
-
-#### Build the program:
-
-```shell
-pnpm anchor-build
-```
-
-#### Start the test validator with the program deployed:
-
-```shell
-pnpm anchor-localnet
-```
-
-#### Run the tests
-
-```shell
-pnpm anchor-test
-```
-
-#### Deploy to Devnet
-
-```shell
-pnpm anchor deploy --provider.cluster devnet
-```
 
 ### web
 
-This is a React app that uses the Anchor generated client to interact with the Solana program.
+This is a Next.js app that uses the generated client to interact with the Ethereum smart contracts deployed using Hardhat.
 
 #### Commands
 
