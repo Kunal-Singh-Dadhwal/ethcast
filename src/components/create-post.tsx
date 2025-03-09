@@ -1,6 +1,7 @@
 "use client"
 import { useState, useRef } from 'react';
 import { useWeb3 } from '@/context/Web3Context';
+import { useWallet } from '@/context/WalletContext'; // Import the wallet hook
 import { pinContentToIPFS, pinJSONToIPFS, PostMetadata } from '@/services/pinata';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -14,7 +15,19 @@ export function CreatePost() {
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const { isConnected, currentAccount, publishFreeContent, publishPaidContent } = useWeb3();
+  
+  // Use wallet context with correct property names from WalletContext.tsx
+  const { 
+    walletAddress,   // Changed from address: walletAddress
+    connected,       // Changed from isConnected
+    connectMetaMask,
+    connectPhantom,
+    walletType
+  } = useWallet();
+  
+  // Use Web3 context only for blockchain transactions
+  const { publishFreeContent, publishPaidContent } = useWeb3();
+  
   const [selectedMedia, setSelectedMedia] = useState<string | null>(null);
   const [mediaType, setMediaType] = useState<"image" | "video" | null>(null);
   const [postType, setPostType] = useState<"free" | "paid">("free");
@@ -23,10 +36,20 @@ export function CreatePost() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!isConnected || !currentAccount) {
+    if (!connected || !walletAddress) {  // Changed from isConnected
       toast({
         title: "Wallet not connected",
         description: "Please connect your wallet to continue.",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    // For this example, we'll only work with MetaMask
+    if (walletType !== 'metamask') {
+      toast({
+        title: "Invalid wallet type",
+        description: "Please connect with MetaMask to publish content on Ethereum.",
         variant: "destructive"
       });
       return;
@@ -41,7 +64,7 @@ export function CreatePost() {
       // Create and pin metadata to IPFS
       const metadata: PostMetadata = {
         title,
-        author: currentAccount,
+        author: walletAddress,
         timestamp: Date.now(),
         contentHash: contentIpfsHash,
         mediaUrl: selectedMedia || undefined,
@@ -116,19 +139,45 @@ export function CreatePost() {
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.5 }}
     >
+      {!connected && (  // Changed from isConnected
+        <div className="space-y-4 mb-6">
+          <div className="text-center text-lg font-medium mb-4">
+            Connect your wallet to post content
+          </div>
+          <div className="flex justify-center gap-4">
+            <Button 
+              variant="outline" 
+              onClick={connectMetaMask}
+              className="flex items-center gap-2"
+            >
+              <Image src="/metamask-logo.svg" alt="MetaMask" width={24} height={24} />
+              Connect MetaMask
+            </Button>
+            <Button 
+              variant="outline" 
+              onClick={connectPhantom}
+              className="flex items-center gap-2"
+            >
+              <Image src="/phantom-logo.svg" alt="Phantom" width={24} height={24} />
+              Connect Phantom
+            </Button>
+          </div>
+        </div>
+      )}
+
       <form onSubmit={handleSubmit} className="space-y-4">
         <Input
           placeholder="Post Title"
           value={title}
           onChange={(e) => setTitle(e.target.value)}
-          disabled={!isConnected || isLoading}
+          disabled={!connected || isLoading || walletType !== 'metamask'}  // Changed from isConnected
           className="border-violet-500/20"
         />
         <Textarea
           placeholder="What's on your mind?"
           value={content}
           onChange={(e) => setContent(e.target.value)}
-          disabled={!isConnected || isLoading}
+          disabled={!connected || isLoading}  // Changed from isConnected
           className="min-h-[100px] resize-none border-0 focus-visible:ring-0 focus-visible:ring-offset-0 p-0 bg-transparent text-lg"
         />
         {selectedMedia && (
@@ -200,7 +249,7 @@ export function CreatePost() {
           <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
             <Button
               type="submit"
-              disabled={!isConnected || isLoading || !title || !content}
+              disabled={!connected || isLoading || !title || !content}  // Changed from isConnected
               className="relative overflow-hidden group bg-gradient-to-r from-violet-600 to-cyan-500 hover:from-violet-700 hover:to-cyan-600 text-white border-0"
             >
               <div className="absolute -inset-full h-full w-1/2 z-5 block transform -skew-x-12 bg-gradient-to-r from-transparent to-white opacity-40 group-hover:animate-shine" />
@@ -209,9 +258,14 @@ export function CreatePost() {
           </motion.div>
         </div>
         
-        {!isConnected && (
+        {!connected && (  // Changed from isConnected
           <div className="mt-2 text-center text-sm text-amber-500">
             Please connect your wallet to publish content
+          </div>
+        )}
+        {connected && walletType !== 'metamask' && (  // Changed from isConnected
+          <div className="mt-2 text-center text-sm text-amber-500">
+            Please connect with MetaMask to publish content on Ethereum.
           </div>
         )}
       </form>

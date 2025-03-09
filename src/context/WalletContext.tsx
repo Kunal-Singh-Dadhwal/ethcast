@@ -5,6 +5,8 @@ interface WalletContextType {
   connected: boolean
   walletAddress: string
   walletType: "metamask" | "phantom" | null
+  hasMetaMask: boolean    // Add this property
+  hasPhantom: boolean     // Add this property
   connectMetaMask: () => Promise<void>
   connectPhantom: () => Promise<void>
   disconnectWallet: () => Promise<void>
@@ -16,8 +18,17 @@ export function WalletProvider({ children }: { children: ReactNode }) {
   const [connected, setConnected] = useState(false)
   const [walletAddress, setWalletAddress] = useState("")
   const [walletType, setWalletType] = useState<"metamask" | "phantom" | null>(null)
+  const [hasMetaMask, setHasMetaMask] = useState(false)  // Add state for wallet detection
+  const [hasPhantom, setHasPhantom] = useState(false)    // Add state for wallet detection
 
   useEffect(() => {
+    // Check if wallets are installed
+    const isMetaMaskInstalled = typeof window !== 'undefined' && !!window.ethereum
+    const isPhantomInstalled = typeof window !== 'undefined' && !!window.solana?.isPhantom
+    
+    setHasMetaMask(isMetaMaskInstalled)
+    setHasPhantom(isPhantomInstalled)
+    
     checkWalletConnections()
   }, [])
 
@@ -107,6 +118,8 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       connected,
       walletAddress,
       walletType,
+      hasMetaMask,      // Add to provider value
+      hasPhantom,       // Add to provider value
       connectMetaMask,
       connectPhantom,
       disconnectWallet
