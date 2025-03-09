@@ -1,6 +1,6 @@
 "use client"
 import { useState, useRef } from 'react';
-import { useWallet } from '@/context/WalletContext';
+import { useWeb3 } from '@/context/Web3Context';
 import { pinContentToIPFS, pinJSONToIPFS, PostMetadata } from '@/services/pinata';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -8,47 +8,80 @@ import { Input } from '@/components/ui/input';
 import { ImageIcon, Send, Eye, Lock } from "lucide-react";
 import { motion } from "framer-motion";
 import Image from "next/image";
+import { toast } from '@/components/ui/use-toast';
 
 export function CreatePost() {
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const { connected, walletAddress } = useWallet();
+  const { isConnected, currentAccount, publishFreeContent, publishPaidContent } = useWeb3();
   const [selectedMedia, setSelectedMedia] = useState<string | null>(null);
   const [mediaType, setMediaType] = useState<"image" | "video" | null>(null);
+  const [postType, setPostType] = useState<"free" | "paid">("free");
+  const [price, setPrice] = useState<string>('0.01');
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [postType, setPostType] = useState<"preview" | "full">("full");
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!connected || !walletAddress) return;
+    if (!isConnected || !currentAccount) {
+      toast({
+        title: "Wallet not connected",
+        description: "Please connect your wallet to continue.",
+        variant: "destructive"
+      });
+      return;
+    }
 
     try {
       setIsLoading(true);
 
-      // Pin content to IPFS
-      const contentHash = await pinContentToIPFS(content);
+      // Pin the raw content to IPFS
+      const contentIpfsHash = await pinContentToIPFS(content);
 
-      // Create and pin metadata
+      // Create and pin metadata to IPFS
       const metadata: PostMetadata = {
         title,
-        author: walletAddress,
-        walletAddress,
+        author: currentAccount,
         timestamp: Date.now(),
-        contentHash
+        contentHash: contentIpfsHash,
+        mediaUrl: selectedMedia || undefined,
+        mediaType: mediaType || undefined
       };
 
-      const metadataHash = await pinJSONToIPFS(metadata);
+      const metadataIpfsHash = await pinJSONToIPFS(metadata);
 
-      // Here you would call your Solana program to store the metadataHash
-      // await program.methods.createPost(...)
+      // Combined IPFS hash data to store on-chain
+      const postData = JSON.stringify({
+        contentHash: contentIpfsHash,
+        metadataHash: metadataIpfsHash
+      });
 
+      // Publish to blockchain based on post type
+      let transaction;
+      if (postType === "free") {
+        transaction = await publishFreeContent(postData);
+      } else {
+        transaction = await publishPaidContent(postData, price);
+      }
+
+      toast({
+        title: "Post published!",
+        description: "Your content has been successfully published to the blockchain.",
+      });
+
+      // Reset form
       setTitle('');
       setContent('');
       setSelectedMedia(null);
       setMediaType(null);
+      setPrice('0.01');
     } catch (error) {
       console.error('Error creating post:', error);
+      toast({
+        title: "Failed to publish post",
+        description: error instanceof Error ? error.message : "An unknown error occurred",
+        variant: "destructive"
+      });
     } finally {
       setIsLoading(false);
     }
@@ -73,7 +106,7 @@ export function CreatePost() {
   };
 
   const togglePostType = () => {
-    setPostType((prev) => (prev === "full" ? "preview" : "full"));
+    setPostType((prev) => (prev === "free" ? "paid" : "free"));
   };
 
   return (
@@ -88,19 +121,20 @@ export function CreatePost() {
           placeholder="Post Title"
           value={title}
           onChange={(e) => setTitle(e.target.value)}
-          disabled={!connected || isLoading}
+          disabled={!isConnected || isLoading}
+          className="border-violet-500/20"
         />
         <Textarea
           placeholder="What's on your mind?"
           value={content}
           onChange={(e) => setContent(e.target.value)}
-          disabled={!connected || isLoading}
+          disabled={!isConnected || isLoading}
           className="min-h-[100px] resize-none border-0 focus-visible:ring-0 focus-visible:ring-offset-0 p-0 bg-transparent text-lg"
         />
         {selectedMedia && (
           <div className="mt-4">
             {mediaType === "image" ? (
-              <Image src={selectedMedia} alt="Selected" width={500} height={300} className="rounded-lg" />
+              <Image src={selectedMedia} alt="Selected" width={500} height={300} className="rounded-lg object-cover" />
             ) : (
               <video controls width="500" className="rounded-lg">
                 <source src={selectedMedia} type="video/mp4" />
@@ -112,6 +146,7 @@ export function CreatePost() {
         <div className="flex justify-between items-center mt-4">
           <div className="flex gap-2 items-center">
             <Button
+              type="button"
               variant="ghost"
               size="icon"
               className="rounded-full text-violet-500 hover:text-violet-600 hover:bg-violet-500/10"
@@ -127,35 +162,58 @@ export function CreatePost() {
               onChange={handleFileChange}
             />
             <Button
+              type="button"
               variant="outline"
               size="sm"
               onClick={togglePostType}
               className="rounded-full border-violet-500/20 flex gap-2 items-center"
             >
-              {postType === "full" ? (
+              {postType === "free" ? (
                 <>
                   <Eye className="h-4 w-4 text-green-500" />
-                  <span>Full Post</span>
+                  <span>Free Post</span>
                 </>
               ) : (
                 <>
                   <Lock className="h-4 w-4 text-amber-500" />
-                  <span>Preview</span>
+                  <span>Paid Content</span>
                 </>
               )}
             </Button>
           </div>
+          
+          {postType === "paid" && (
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-muted-foreground">Price (ETH):</span>
+              <Input
+                type="number"
+                value={price}
+                onChange={(e) => setPrice(e.target.value)}
+                disabled={isLoading}
+                className="w-24 h-8 text-sm"
+                min="0.001"
+                step="0.001"
+              />
+            </div>
+          )}
+          
           <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
             <Button
               type="submit"
-              disabled={!connected || isLoading || !title || !content}
+              disabled={!isConnected || isLoading || !title || !content}
               className="relative overflow-hidden group bg-gradient-to-r from-violet-600 to-cyan-500 hover:from-violet-700 hover:to-cyan-600 text-white border-0"
             >
               <div className="absolute -inset-full h-full w-1/2 z-5 block transform -skew-x-12 bg-gradient-to-r from-transparent to-white opacity-40 group-hover:animate-shine" />
-              {isLoading ? 'Posting...' : <><Send className="mr-2 h-4 w-4" />Post</>}
+              {isLoading ? 'Publishing...' : <><Send className="mr-2 h-4 w-4" />Publish</>}
             </Button>
           </motion.div>
         </div>
+        
+        {!isConnected && (
+          <div className="mt-2 text-center text-sm text-amber-500">
+            Please connect your wallet to publish content
+          </div>
+        )}
       </form>
     </motion.div>
   );
