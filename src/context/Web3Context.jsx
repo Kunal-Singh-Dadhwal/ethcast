@@ -1,17 +1,16 @@
+"use client";
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import Web3 from 'web3';
 import ContentPlatformABI from './abis/ContentPlatform.json'; // Import your contract ABI
+import { useWallet } from './WalletContext'; // Import WalletContext
 
 // Create the context and export it
 export const Web3Context = createContext(null);
 
-// Initial state
+// Initial state - remove wallet connection related state
 const initialState = {
   web3: null,
-  accounts: [],
-  currentAccount: null,
   contract: null,
-  isConnected: false,
   isLoading: true,
   error: null,
   networkId: null,
@@ -21,42 +20,39 @@ const initialState = {
 
 export const Web3Provider = ({ children, contractAddress }) => {
   const [state, setState] = useState(initialState);
+  
+  // Get wallet information from WalletContext
+  const { connected, walletAddress, walletType } = useWallet();
 
-  // Initialize web3 connection
+  // Initialize web3 connection when wallet gets connected
   const initWeb3 = useCallback(async () => {
+    // Only proceed if we have a connected wallet that is MetaMask
+    if (!connected || walletType !== 'metamask') {
+      setState(prev => ({
+        ...initialState,
+        isLoading: false,
+        error: !connected ? 'Wallet not connected' : 'Unsupported wallet type'
+      }));
+      return;
+    }
+    
     try {
       setState(prev => ({ ...prev, isLoading: true, error: null }));
       
       let web3Instance;
-      // Check if MetaMask is installed
+      // Use existing ethereum provider from the connected wallet
       if (window.ethereum) {
         web3Instance = new Web3(window.ethereum);
-        try {
-          // Request account access
-          await window.ethereum.request({ method: 'eth_requestAccounts' });
-        } catch (error) {
-          throw new Error('User denied account access');
-        }
-      } 
-      // Legacy dapp browsers
-      else if (window.web3) {
-        web3Instance = new Web3(window.web3.currentProvider);
-      } 
-      // If no injected web3 instance is detected, fall back to Ganache
-      else {
-        throw new Error('No Web3 provider detected. Please install MetaMask or use a Web3 enabled browser.');
+      } else {
+        throw new Error('No Web3 provider detected. Please check your wallet connection.');
       }
 
       // Get network ID
       const networkId = await web3Instance.eth.net.getId();
       
-      // Get accounts
-      const accounts = await web3Instance.eth.getAccounts();
-      const currentAccount = accounts[0];
-      
       // Get ETH balance
-      const balance = currentAccount 
-        ? await web3Instance.eth.getBalance(currentAccount)
+      const balance = walletAddress 
+        ? await web3Instance.eth.getBalance(walletAddress)
         : '0';
       
       // Initialize contract instance
@@ -65,18 +61,9 @@ export const Web3Provider = ({ children, contractAddress }) => {
         contractAddress
       );
 
-      // Set up event listeners for MetaMask
-      if (window.ethereum) {
-        window.ethereum.on('accountsChanged', handleAccountsChanged);
-        window.ethereum.on('chainChanged', () => window.location.reload());
-      }
-
       setState({
         web3: web3Instance,
-        accounts,
-        currentAccount,
         contract,
-        isConnected: true,
         isLoading: false,
         error: null,
         networkId,
@@ -85,8 +72,8 @@ export const Web3Provider = ({ children, contractAddress }) => {
       });
 
       // Load user posts if connected
-      if (currentAccount) {
-        loadUserPosts(contract, currentAccount);
+      if (walletAddress) {
+        loadUserPosts(contract, walletAddress);
       }
     } catch (error) {
       console.error('Error initializing web3:', error);
@@ -96,39 +83,7 @@ export const Web3Provider = ({ children, contractAddress }) => {
         error: error.message,
       }));
     }
-  }, [contractAddress]);
-
-  // Handle account changes
-  const handleAccountsChanged = async (accounts) => {
-    if (accounts.length === 0) {
-      // User logged out
-      setState(prev => ({
-        ...prev,
-        accounts: [],
-        currentAccount: null,
-        isConnected: false,
-        balance: '0',
-        userPosts: [],
-      }));
-    } else {
-      // Get updated balance
-      const balance = await state.web3.eth.getBalance(accounts[0]);
-      
-      setState(prev => ({
-        ...prev,
-        accounts,
-        currentAccount: accounts[0],
-        isConnected: true,
-        balance: state.web3.utils.fromWei(balance, 'ether'),
-        userPosts: [],
-      }));
-
-      // Reload user posts with new account
-      if (state.contract) {
-        loadUserPosts(state.contract, accounts[0]);
-      }
-    }
-  };
+  }, [contractAddress, connected, walletAddress, walletType]);
 
   // Load user posts
   const loadUserPosts = async (contract, account) => {
@@ -156,116 +111,116 @@ export const Web3Provider = ({ children, contractAddress }) => {
     }
   };
 
-  // Connect wallet
-  const connectWallet = useCallback(async () => {
-    if (state.isConnected) return;
-    await initWeb3();
-  }, [state.isConnected, initWeb3]);
-
-  // Disconnect wallet (for UI purposes only - can't actually disconnect MetaMask)
-  const disconnectWallet = useCallback(() => {
-    setState(prev => ({
-      ...initialState,
-      web3: prev.web3, // Keep the web3 instance
-      isLoading: false,
-    }));
-  }, []);
-
   // Publish free content
   const publishFreeContent = useCallback(async (content) => {
-    if (!state.contract || !state.currentAccount) return null;
+    if (!state.contract || !walletAddress) return null;
     
     try {
       const result = await state.contract.methods
         .publishFreeContent(content)
-        .send({ from: state.currentAccount });
+        .send({ from: walletAddress });
       
       // Reload user posts after publishing
-      await loadUserPosts(state.contract, state.currentAccount);
+      await loadUserPosts(state.contract, walletAddress);
       
       return result;
     } catch (error) {
       console.error('Error publishing free content:', error);
       throw error;
     }
-  }, [state.contract, state.currentAccount]);
+  }, [state.contract, walletAddress]);
 
   // Publish paid content
   const publishPaidContent = useCallback(async (content, price) => {
-    if (!state.contract || !state.currentAccount) return null;
+    if (!state.contract || !walletAddress) return null;
     
     try {
       const priceInWei = state.web3.utils.toWei(price.toString(), 'ether');
       const result = await state.contract.methods
         .publishPaidContent(content, priceInWei)
-        .send({ from: state.currentAccount });
+        .send({ from: walletAddress });
       
       // Reload user posts after publishing
-      await loadUserPosts(state.contract, state.currentAccount);
+      await loadUserPosts(state.contract, walletAddress);
       
       return result;
     } catch (error) {
       console.error('Error publishing paid content:', error);
       throw error;
     }
-  }, [state.contract, state.currentAccount, state.web3]);
+  }, [state.contract, walletAddress, state.web3]);
 
   // Access content
   const accessContent = useCallback(async (postId) => {
-    if (!state.contract || !state.currentAccount) return null;
+    if (!state.contract || !walletAddress) return null;
     
     try {
       const postInfo = await state.contract.methods.getPostInfo(postId).call();
       
       // If content is free or user is the author, use viewContent
-      if (postInfo.contentType === '0' || postInfo.author.toLowerCase() === state.currentAccount.toLowerCase()) {
-        return await state.contract.methods.viewContent(postId).call({ from: state.currentAccount });
+      if (postInfo.contentType === '0' || postInfo.author.toLowerCase() === walletAddress.toLowerCase()) {
+        return await state.contract.methods.viewContent(postId).call({ from: walletAddress });
       } else {
         // For paid content, call accessContent which handles payment
-        return await state.contract.methods.accessContent(postId).send({ from: state.currentAccount });
+        return await state.contract.methods.accessContent(postId).send({ from: walletAddress });
       }
     } catch (error) {
       console.error('Error accessing content:', error);
       throw error;
     }
-  }, [state.contract, state.currentAccount]);
+  }, [state.contract, walletAddress]);
 
   // Withdraw creator balance
   const withdrawCreatorBalance = useCallback(async () => {
-    if (!state.contract || !state.currentAccount) return null;
+    if (!state.contract || !walletAddress) return null;
     
     try {
       return await state.contract.methods
         .withdrawCreatorBalance()
-        .send({ from: state.currentAccount });
+        .send({ from: walletAddress });
     } catch (error) {
       console.error('Error withdrawing creator balance:', error);
       throw error;
     }
-  }, [state.contract, state.currentAccount]);
+  }, [state.contract, walletAddress]);
 
-  // Initialize web3 on component mount
+  // Re-initialize web3 when wallet connection changes
   useEffect(() => {
-    initWeb3();
+    if (connected && walletAddress) {
+      initWeb3();
+    } else {
+      // Reset state when wallet disconnects
+      setState({
+        ...initialState,
+        isLoading: false,
+        error: 'Wallet not connected'
+      });
+    }
+  }, [connected, walletAddress, walletType, initWeb3]);
+
+  // Listen for chain changes
+  useEffect(() => {
+    const handleChainChanged = () => window.location.reload();
     
-    // Cleanup function
+    if (window.ethereum) {
+      window.ethereum.on('chainChanged', handleChainChanged);
+    }
+    
     return () => {
       if (window.ethereum) {
-        window.ethereum.removeListener('accountsChanged', handleAccountsChanged);
+        window.ethereum.removeListener('chainChanged', handleChainChanged);
       }
     };
-  }, [initWeb3]);
+  }, []);
 
-  // Context value
+  // Context value - removed wallet connection functions
   const contextValue = {
     ...state,
-    connectWallet,
-    disconnectWallet,
     publishFreeContent,
     publishPaidContent,
     accessContent,
     withdrawCreatorBalance,
-    refreshUserPosts: () => loadUserPosts(state.contract, state.currentAccount),
+    refreshUserPosts: () => walletAddress ? loadUserPosts(state.contract, walletAddress) : null,
   };
 
   return (
